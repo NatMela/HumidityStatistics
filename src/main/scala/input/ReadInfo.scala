@@ -7,7 +7,7 @@ import com.typesafe.scalalogging.Logger
 import service.{CalculationService, ValidationService}
 import model.{FailedSensors, SensorInfo}
 
-import java.io.File
+import java.io.{BufferedReader, File, FileReader}
 import java.nio.file.Paths
 import scala.collection.immutable.ArraySeq
 import scala.concurrent.{ExecutionContext, Future}
@@ -74,6 +74,22 @@ class ReadInfoImpl extends ReadInfo {
 
       (files.size, failedMeasurementsSensors, successSensors.values.toSeq)
     })
+  }
+
+  def processFilesBufferedReader(files: Seq[File]): (Long, FailedSensors, Seq[SensorInfo]) = {
+    val nanSensors: FailedSensors = FailedSensors(ids = Seq.empty[String], numOfFails = 0)
+    val sensors: Map[String, SensorInfo] = Map.empty[String, SensorInfo]
+    val result: Seq[(FailedSensors, Map[String, SensorInfo])] = files.map(file => {
+      val reader = new BufferedReader(new FileReader(file))
+      val lines = Iterator.continually(reader.readLine()).takeWhile(_ != null)
+        .foldLeft((nanSensors, sensors))((acc, line) => processFileLine((acc), line.split(',')))
+      reader.close
+      lines
+    })
+    val proceedInfo = result.foldLeft((nanSensors, sensors))((acc, value) => {
+      (FailedSensors(acc._1.ids :++ value._1.ids, acc._1.numOfFails + value._1.numOfFails), combineSensorInfo(acc._2, value._2))
+    })
+    (files.size, proceedInfo._1, proceedInfo._2.values.toSeq)
   }
 
   private val logger = Logger[ReadInfoImpl]
